@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Events\SampleEvent;
+use App\Events\SampleEventB;
 use App\Jobs\EventDispatcherJob;
 use App\Jobs\InfinitelyRunningJob;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -19,10 +20,23 @@ use ReflectionClass;
 
 class SpawnWorkers extends Component
 {
+    public array $targetClasses = [
+        ProcessSpawned::class,
+        ErrorReceived::class,
+        MessageReceived::class,
+        ProcessExited::class,
+    ];
+
     #[On('native:'.SampleEvent::class)]
     public function eventListener(): void
     {
-        dd('Event received');
+        $this->js('alert("SampleEvent received on Livewire listener")');
+    }
+
+    #[On('native:'.SampleEventB::class)]
+    public function eventListenerB(): void
+    {
+        $this->js('alert("SampleEvent received on Laravel listener as well")');
     }
 
     public function spawnWorker(): void
@@ -42,16 +56,9 @@ class SpawnWorkers extends Component
 
     public function rectorBroadcastNow(): void
     {
-        $classes = [
-            MessageReceived::class,
-            ErrorReceived::class,
-            ProcessExited::class,
-            ProcessSpawned::class,
-        ];
-
         $parser = (new ParserFactory())->createForNewestSupportedVersion();
 
-        foreach ($classes as $class) {
+        foreach ($this->targetClasses as $class) {
             $file = file_get_contents(new ReflectionClass($class)->getFileName());
             $stmts = $parser->parse($file);
 
@@ -70,6 +77,11 @@ class SpawnWorkers extends Component
 
     public function render()
     {
-        return view('livewire.spawn-workers');
+        return view('livewire.spawn-workers', [
+            'implementStmts' => array_map(fn(string $class) => new NodeFinder()->findFirstInstanceOf(
+                (new ParserFactory())->createForNewestSupportedVersion()->parse(file_get_contents((new ReflectionClass($class))->getFileName())),
+                \PhpParser\Node\Stmt\Class_::class,
+            )->implements[0]->toString(), $this->targetClasses),
+        ]);
     }
 }
